@@ -1,0 +1,305 @@
+// MCAT Prep — database schema
+// Invite-only auth (Apple + email magic link) + MCAT content model.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Auth.js v5 required tables
+// ──────────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  role          Role      @default(STUDENT)
+
+  // Study profile
+  targetScore  Int?
+  testDate     DateTime?
+  hoursPerWeek Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  attempts      Attempt[]
+  reviews       FlashcardReview[]
+  conversations AiConversation[]
+  studyPlans    StudyPlan[]
+  invite        Invite?           @relation(fields: [inviteId], references: [id])
+  inviteId      String?           @unique
+}
+
+enum Role {
+  STUDENT
+  ADMIN
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Invite gate — only emails with an invite can sign in
+// ──────────────────────────────────────────────────────────────────────────
+
+model Invite {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  code      String    @unique @default(cuid())
+  role      Role      @default(STUDENT)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User?
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// MCAT content taxonomy
+// ──────────────────────────────────────────────────────────────────────────
+
+enum Section {
+  CP   // Chemical and Physical Foundations
+  CARS // Critical Analysis and Reasoning Skills
+  BB   // Biological and Biochemical Foundations
+  PS   // Psychological, Social, and Biological Foundations
+}
+
+model ContentCategory {
+  id      String  @id @default(cuid())
+  section Section
+  code    String  @unique // e.g. "1A"
+  name    String
+  topics  Topic[]
+}
+
+model Topic {
+  id                String          @id @default(cuid())
+  contentCategoryId String
+  contentCategory   ContentCategory @relation(fields: [contentCategoryId], references: [id])
+  name              String
+  slug              String          @unique
+  summary           String?
+
+  lessons    Lesson[]
+  questions  Question[]
+  flashcards Flashcard[]
+}
+
+model Lesson {
+  id        String   @id @default(cuid())
+  topicId   String
+  topic     Topic    @relation(fields: [topicId], references: [id])
+  title     String
+  slug      String   @unique
+  bodyMdx   String   @db.Text
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Question bank
+// ──────────────────────────────────────────────────────────────────────────
+
+model Passage {
+  id      String     @id @default(cuid())
+  section Section
+  title   String?
+  body    String     @db.Text
+  questions Question[]
+}
+
+model Question {
+  id          String   @id @default(cuid())
+  topicId     String?
+  topic       Topic?   @relation(fields: [topicId], references: [id])
+  passageId   String?
+  passage     Passage? @relation(fields: [passageId], references: [id])
+  section     Section
+  stem        String   @db.Text
+  choices     Json     // ["choice A", "choice B", ...]
+  correctIdx  Int
+  explanation String?  @db.Text
+  difficulty  Int      @default(3) // 1–5
+  createdAt   DateTime @default(now())
+
+  examQuestions  ExamQuestion[]
+  attemptAnswers AttemptAnswer[]
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Exam simulators
+// ──────────────────────────────────────────────────────────────────────────
+
+enum ExamType {
+  FULL_LENGTH
+  SECTION
+  DRILL
+}
+
+model Exam {
+  id        String         @id @default(cuid())
+  type      ExamType
+  title     String
+  section   Section?       // null for FULL_LENGTH
+  questions ExamQuestion[]
+  attempts  Attempt[]
+  createdAt DateTime       @default(now())
+}
+
+model ExamQuestion {
+  id         String   @id @default(cuid())
+  examId     String
+  exam       Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+  section    Section
+  order      Int
+
+  @@unique([examId, order])
+}
+
+model Attempt {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  examId     String
+  exam       Exam      @relation(fields: [examId], references: [id])
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  scaledCP   Int?
+  scaledCARS Int?
+  scaledBB  Int?
+  scaledPS  Int?
+
+  answers AttemptAnswer[]
+}
+
+model AttemptAnswer {
+  id         String   @id @default(cuid())
+  attemptId  String
+  attempt    Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+  chosenIdx  Int?
+  flagged    Boolean  @default(false)
+  timeMs     Int?
+
+  @@unique([attemptId, questionId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Flashcards (FSRS-ready)
+// ──────────────────────────────────────────────────────────────────────────
+
+model Flashcard {
+  id        String   @id @default(cuid())
+  topicId   String?
+  topic     Topic?   @relation(fields: [topicId], references: [id])
+  front     String   @db.Text
+  back      String   @db.Text
+  createdAt DateTime @default(now())
+
+  reviews FlashcardReview[]
+}
+
+model FlashcardReview {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flashcardId String
+  flashcard   Flashcard @relation(fields: [flashcardId], references: [id])
+  reviewedAt  DateTime  @default(now())
+  quality     Int       // 0–5 (again/hard/good/easy…)
+  stability   Float     @default(1)
+  difficulty  Float     @default(5)
+  dueAt       DateTime
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// AI Study Counselor
+// ──────────────────────────────────────────────────────────────────────────
+
+model AiConversation {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String?
+  createdAt DateTime    @default(now())
+  messages  AiMessage[]
+}
+
+model AiMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String         // "user" | "assistant"
+  content        String         @db.Text
+  createdAt      DateTime       @default(now())
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Personalized study plan (counselor output)
+// ──────────────────────────────────────────────────────────────────────────
+
+model StudyPlan {
+  id        String          @id @default(cuid())
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+  tasks     StudyPlanTask[]
+}
+
+model StudyPlanTask {
+  id          String    @id @default(cuid())
+  planId      String
+  plan        StudyPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  dueDate     DateTime
+  description String
+  section     Section?
+  topicId     String?
+  completedAt DateTime?
+}

@@ -1,0 +1,15 @@
+node_modules/
+.next/
+.env
+.env.local
+.DS_Store
+dist/
+build/
+*.log
+.vercel
+coverage/
+.turbo/
+ios/build/
+ios/DerivedData/
+ios/Pods/
+*.xcuserstate
