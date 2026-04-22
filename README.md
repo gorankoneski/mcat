@@ -45,14 +45,19 @@ Then:
 
 ```bash
 docker compose exec web npx prisma migrate dev --name init
-docker compose exec web npx prisma db seed   # optional, once a seed exists
+docker compose exec web npm run db:seed
 ```
+
+The seed loads the AAMC content taxonomy (~32 content categories), four
+starter topics with lessons and practice questions, and a demo mini-exam.
 
 ### Issue an invite (required — app is invite-only)
 
 ```bash
-docker compose exec web npx tsx scripts/invite.ts user@example.com
+docker compose exec web npx tsx scripts/invite.ts you@example.com --admin
 ```
+
+Or from the UI: sign in as an admin and go to `/admin/invites`.
 
 ## MCAT sections
 
@@ -64,10 +69,10 @@ Content is tagged by AAMC section: **C/P** (Chem/Phys), **CARS**, **B/B** (Bio/B
 - [x] Next.js + Prisma scaffold
 - [x] Auth.js with Apple + email magic link, invite gate
 - [x] Anthropic counselor streaming endpoint
-- [ ] Prisma migration + seed
-- [ ] Lesson viewer (MDX + KaTeX)
-- [ ] Question runner + full-length sim
-- [ ] Progress dashboard (scaled score, heatmap)
+- [x] Prisma seed (AAMC taxonomy + sample content)
+- [x] Lesson viewer (Markdown + KaTeX)
+- [x] Exam sim runner (timer, flag, review, score card)
+- [x] Counselor chat UI
+- [x] Admin content authoring (invites, lessons, questions, exams)
 - [ ] Flashcards (FSRS)
-- [ ] Admin content authoring
 - [ ] iOS SwiftUI client

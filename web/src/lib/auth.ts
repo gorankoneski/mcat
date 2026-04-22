@@ -32,11 +32,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true;
     },
     async session({ session, user }) {
-      if (session.user) {
-        (session.user as { id?: string; role?: string }).id = user.id;
-        (session.user as { id?: string; role?: string }).role = (user as { role?: string }).role;
-      }
+      session.user.id = user.id;
+      session.user.role = (user as { role: 'STUDENT' | 'ADMIN' }).role;
       return session;
+    },
+  },
+  events: {
+    // Apply role from the Invite when a new User is created.
+    async createUser({ user }) {
+      if (!user.email || !user.id) return;
+      const invite = await prisma.invite.findUnique({ where: { email: user.email } });
+      if (!invite) return;
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { role: invite.role, inviteId: invite.id },
+      });
     },
   },
   pages: {
